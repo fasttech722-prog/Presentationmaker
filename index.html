@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WhatsApp AI Presentation Planner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .urdu-text { font-family: 'Noto Nastaliq Urdu', 'Inter', serif; line-height: 2.2; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Top Navbar -->
+  <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur sticky top-0 z-20">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-xl">
+          W
+        </div>
+        <div>
+          <h1 class="text-lg font-bold tracking-tight text-white">WhatsApp AI Slide Studio</h1>
+          <p class="text-xs text-slate-400">Send a topic on WhatsApp • Get instant slides here & on chat</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <div id="statusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+          <span id="statusDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span id="statusText">Sync Paused</span>
+        </div>
+
+        <button id="toggleSyncBtn" onclick="togglePolling()" class="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow-lg shadow-emerald-500/10">
+          Start Auto-Sync
+        </button>
+
+        <button onclick="clearHistory()" class="px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 hover:bg-rose-950/60 hover:text-rose-300 text-slate-400 border border-slate-700 transition">
+          Clear Local Data
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="max-w-7xl mx-auto w-full px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 flex-1">
+    
+    <!-- Left Sidebar: Presentation History -->
+    <aside class="lg:col-span-4 flex flex-col gap-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">WhatsApp Requests</h2>
+          <span id="deckCount" class="text-xs px-2 py-0.5 rounded-md bg-slate-800 text-emerald-400 font-medium">0 Decks</span>
+        </div>
+        <p class="text-xs text-slate-400 mb-4">
+          Apne WhatsApp Agent ko koi bhi topic bhejein (maslan: <span class="text-slate-200 italic">"2 slides Urdu me AI ke faide pr bnao"</span>).
+        </p>
+        <div id="deckList" class="space-y-2.5 max-h-[65vh] overflow-y-auto pr-1">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Content: Active Presentation Slides -->
+    <section class="lg:col-span-8 flex flex-col">
+      <div id="emptyState" class="flex-1 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl p-12 flex flex-col items-center justify-center text-center">
+        <div class="w-16 h-16 rounded-2xl bg-slate-800/80 flex items-center justify-center text-emerald-400 mb-4">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/>
+          </svg>
+        </div>
+        <h3 class="text-lg font-semibold text-white mb-1">No Presentation Selected</h3>
+        <p class="text-sm text-slate-400 max-w-md">
+          Upar <strong class="text-emerald-400">"Start Auto-Sync"</strong> button dabayein aur apne WhatsApp Agent ko message bhejein. Aapki slides yahan live ban jayengi!
+        </p>
+      </div>
+
+      <div id="slideViewer" class="hidden space-y-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <span id="activeMeta" class="text-xs font-medium text-emerald-400 uppercase tracking-wider"></span>
+            <h2 id="activeTitle" class="text-2xl font-bold text-white mt-1"></h2>
+            <p id="activePrompt" class="text-xs text-slate-400 mt-1"></p>
+          </div>
+          <button onclick="window.print()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+            Print / Save PDF
+          </button>
+        </div>
+
+        <div id="slidesContainer" class="grid grid-cols-1 gap-6">
+          <!-- Slide Cards rendered here -->
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let isPolling = false;
+    let pollTimer = null;
+    let decks = JSON.parse(localStorage.getItem('wa_presentations') || '[]');
+    let nextOffset = localStorage.getItem('wa_next_offset') || '';
+    let activeDeckId = decks[0]?.id || null;
+
+    function updateStatusUI(state, message) {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      const btn = document.getElementById('toggleSyncBtn');
+
+      if (state === 'polling') {
+        dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
+        text.textContent = message || 'Listening for WhatsApp messages...';
+        btn.textContent = 'Stop Auto-Sync';
+        btn.className = 'px-4 py-2 rounded-lg text-sm font-semibold bg-rose-500 hover:bg-rose-400 text-slate-950 transition';
+      } else if (state === 'error') {
+        dot.className = 'w-2 h-2 rounded-full bg-rose-500';
+        text.textContent = message || 'Connection Error';
+      } else {
+        dot.className = 'w-2 h-2 rounded-full bg-slate-500';
+        text.textContent = 'Sync Paused';
+        btn.textContent = 'Start Auto-Sync';
+        btn.className = 'px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition';
+      }
+    }
+
+    async function pollOnce() {
+      if (!isPolling) return;
+      try {
+        const url = `/.netlify/functions/agent${nextOffset ? `?offset=${nextOffset}` : ''}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!res.ok) {
+          updateStatusUI('error', data.error?.message || data.error || 'API Error');
+          return;
+        }
+
+        if (data.next_offset !== undefined && data.next_offset !== null) {
+          nextOffset = data.next_offset;
+          localStorage.setItem('wa_next_offset', nextOffset);
+        }
+
+        if (data.processed && data.processed.length > 0) {
+          for (const item of data.processed) {
+            if (!decks.some(d => d.id === item.id)) {
+              decks.unshift(item);
+              activeDeckId = item.id;
+            }
+          }
+          localStorage.setItem('wa_presentations', JSON.stringify(decks));
+          renderDecks();
+          renderActiveDeck();
+        }
+
+        updateStatusUI('polling', 'Connected • Waiting for message');
+      } catch (err) {
+        updateStatusUI('error', 'Network error');
+      } finally {
+        if (isPolling) {
+          // 5 seconds gap respects WhatsApp's 15 requests/minute GET /updates rate limit
+          pollTimer = setTimeout(pollOnce, 5000);
+        }
+      }
+    }
+
+    function togglePolling() {
+      isPolling = !isPolling;
+      if (isPolling) {
+        updateStatusUI('polling', 'Connecting to WhatsApp...');
+        pollOnce();
+      } else {
+        clearTimeout(pollTimer);
+        updateStatusUI('paused');
+      }
+    }
+
+    function selectDeck(id) {
+      activeDeckId = id;
+      renderDecks();
+      renderActiveDeck();
+    }
+
+    function clearHistory() {
+      if (confirm('Kya aap saari saved presentations delete karna chahte hain?')) {
+        decks = [];
+        activeDeckId = null;
+        localStorage.removeItem('wa_presentations');
+        renderDecks();
+        renderActiveDeck();
+      }
+    }
+
+    function renderDecks() {
+      const list = document.getElementById('deckList');
+      document.getElementById('deckCount').textContent = `${decks.length} Decks`;
+
+      if (decks.length === 0) {
+        list.innerHTML = `<div class="text-xs text-slate-500 py-6 text-center">Abhi tak koi message receive nahi hua.</div>`;
+        return;
+      }
+
+      list.innerHTML = decks.map(d => {
+        const isSelected = d.id === activeDeckId;
+        const slideCount = d.plan?.slides?.length || 0;
+        return `
+          <button onclick="selectDeck('${d.id}')" class="w-full text-left p-3.5 rounded-xl border transition ${
+            isSelected 
+              ? 'bg-emerald-500/10 border-emerald-500/50 text-white' 
+              : 'bg-slate-950/60 border-slate-800/80 text-slate-300 hover:border-slate-700'
+          }">
+            <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+              <span class="font-medium text-emerald-400">${d.contactName}</span>
+              <span>${slideCount} Slides</span>
+            </div>
+            <div class="font-semibold text-sm line-clamp-1">${d.plan?.title || d.prompt}</div>
+            <div class="text-xs text-slate-400 line-clamp-1 mt-0.5">"${d.prompt}"</div>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function renderActiveDeck() {
+      const emptyState = document.getElementById('emptyState');
+      const viewer = document.getElementById('slideViewer');
+      const deck = decks.find(d => d.id === activeDeckId);
+
+      if (!deck) {
+        emptyState.classList.remove('hidden');
+        viewer.classList.add('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      viewer.classList.remove('hidden');
+
+      document.getElementById('activeMeta').textContent = `From ${deck.contactName} • Language: ${deck.plan?.language || 'Auto'}`;
+      document.getElementById('activeTitle').textContent = deck.plan?.title || 'Presentation';
+      document.getElementById('activePrompt').textContent = `WhatsApp Prompt: "${deck.prompt}"`;
+
+      const slides = deck.plan?.slides || [];
+      const container = document.getElementById('slidesContainer');
+
+      container.innerHTML = slides.map(s => `
+        <div class="bg-gradient-to-br from-slate-900 to-slate-900/60 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+          <div class="flex items-center justify-between border-b border-slate-800/80 pb-4 mb-4">
+            <span class="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+              Slide ${s.slideNumber}
+            </span>
+          </div>
+          <h3 class="text-xl font-bold text-white mb-4">${s.title}</h3>
+          <ul class="space-y-2.5 text-slate-200 text-sm pl-5 list-disc marker:text-emerald-400">
+            ${(s.bullets || []).map(b => `<li class="leading-relaxed">${b}</li>`).join('')}
+          </ul>
+          ${s.speakerNotes ? `
+            <div class="mt-6 pt-4 border-t border-slate-800/80 text-xs text-slate-400 bg-slate-950/50 p-3.5 rounded-xl">
+              <strong class="text-slate-300 uppercase tracking-wider block mb-1">Speaker Notes:</strong>
+              ${s.speakerNotes}
+            </div>
+          ` : ''}
+        </div>
+      `).join('');
+    }
+
+    // Initial render
+    renderDecks();
+    renderActiveDeck();
+  </script>
+</body>
+</html>
